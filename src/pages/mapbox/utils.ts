@@ -46,17 +46,17 @@ const computeCameraPosition = (
   altitude: number,
   smooth = false
 ) => {
-  var bearingInRadian = bearing / 57.29;
-  var pitchInRadian = (90 - pitch) / 57.29;
+  var bearingInRadian = bearing * (Math.PI / 180);
+  var pitchInRadian = (90 - pitch) * (Math.PI / 180);
 
   var lngDiff =
     ((altitude / Math.tan(pitchInRadian)) *
       Math.sin(-bearingInRadian)) /
-    70000; // ~70km/degree longitude
+    (111320 * Math.cos(targetPosition.lat * (Math.PI / 180)));
   var latDiff =
     ((altitude / Math.tan(pitchInRadian)) *
       Math.cos(-bearingInRadian)) /
-    110000 // 110km/degree latitude
+    111320;
 
   var correctedLng = targetPosition.lng + lngDiff;
   var correctedLat = targetPosition.lat - latDiff;
@@ -224,7 +224,8 @@ const animatePath = async ({
       );
 
       // slowly rotate the map at a constant rate
-      const bearing = startBearing - animationPhase * 200.0;
+      // const bearing = startBearing - animationPhase * 200.0;
+      const bearing = startBearing;
 
       // compute corrected camera ground position, so that he leading edge of the path is in view
       var correctedPosition = computeCameraPosition(

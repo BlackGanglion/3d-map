@@ -4,7 +4,7 @@ import * as turf from '@turf/turf';
 
 import { token } from '../../../config';
 import { data } from '../../../data/450092046183596032';
-import { flyInAndRotate, createGeoJSONCircle, animatePath } from './utils';
+import { flyInAndRotate, animatePath } from './utils';
 
 import 'mapbox-gl/dist/mapbox-gl.css';
 import styles from './mapbox.less';
@@ -12,12 +12,18 @@ import styles from './mapbox.less';
 mapboxgl.accessToken = token;
 
 const initMap = async () => {
+  // get the start of the linestring, to be used for animating a zoom-in from high altitude
+  const targetLngLat = {
+    lng: data.geometry.coordinates[0][0],
+    lat: data.geometry.coordinates[0][1],
+  };
+
   const map = new mapboxgl.Map({
     // style: 'mapbox://styles/blackganglion/cm4ps80vc006101su8ofl1z6q', // style URL
     style: 'mapbox://styles/mapbox/satellite-streets-v12',
     container: 'map',
-    zoom: 1.9466794621990684,
-    center: { lng: 12.563530000000014, lat: 58.27372323078674 },
+    zoom: 9.464540554397551,
+    center: targetLngLat,
     pitch: 70,
     bearing: 0,
     // Choose from Mapbox's core styles, or make your own style with Mapbox Studio
@@ -38,8 +44,8 @@ const initMap = async () => {
       source: "line",
       paint: {
         "line-color": "rgba(0,0,0,0)",
-        "line-width": 9,
-        "line-opacity": 0.8,
+        "line-width": 6,
+        "line-opacity": 1,
       },
       layout: {
         "line-cap": "round",
@@ -115,33 +121,29 @@ const initMap = async () => {
       // add a geojson source and layer for the linestring to the map
       addPathSourceAndLayer(trackGeojson);
 
-      // get the start of the linestring, to be used for animating a zoom-in from high altitude
-      const targetLngLat = {
-        lng: trackGeojson.geometry.coordinates[0][0],
-        lat: trackGeojson.geometry.coordinates[0][1],
-      };
+      const pitch = 70;
 
       // animate zooming in to the start point, get the final bearing and altitude for use in the next animation
       const { bearing, altitude } = await flyInAndRotate({
         map,
         targetLngLat,
-        duration: 7000,
-        startAltitude: 3000000,
-        endAltitude: 12000,
+        duration: 10000,
+        startAltitude: 100000,
+        endAltitude: 1000,
         startBearing: 0,
         endBearing: -20,
         startPitch: 40,
-        endPitch: 50,
+        endPitch: pitch,
       });
 
       // follow the path while slowly rotating the camera, passing in the camera bearing and altitude from the previous animation
       await animatePath({
         map,
-        duration: 60000,
+        duration: 120000,
         path: trackGeojson,
         startBearing: bearing,
         startAltitude: altitude,
-        pitch: 50
+        pitch,
       });
 
       // get the bounds of the linestring, use fitBounds() to animate to a final view
@@ -201,12 +203,10 @@ const initMap = async () => {
   });
 
   function printMapState() {
-    /*
     console.log("Zoom: " + map.getZoom());
     console.log("Center: " + JSON.stringify(map.getCenter()));
     console.log("Pitch: " + map.getPitch());
     console.log("Bearing: " + map.getBearing());
-    */
   }
 
   map.on('moveend', printMapState);
