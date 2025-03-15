@@ -3,7 +3,7 @@ import mapboxgl from 'mapbox-gl';
 import * as turf from '@turf/turf';
 
 import { token } from '../../../config';
-import { data } from '../../../data/female-stage-2';
+import { data } from '../../../data/450092046183596032';
 import { flyInAndRotate, createGeoJSONCircle, animatePath } from './utils';
 
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -47,6 +47,7 @@ const initMap = async () => {
       },
     });
 
+    /*
     map.addSource("start-pin-base", {
       type: "geojson",
       data: createGeoJSONCircle(trackGeojson.geometry.coordinates[0], 0.04)
@@ -106,6 +107,7 @@ const initMap = async () => {
         'fill-extrusion-height': 1200
       }
     });
+    */
   };
 
   const playAnimations = async (trackGeojson: any) => {
