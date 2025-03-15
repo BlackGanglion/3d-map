@@ -46,17 +46,20 @@ const computeCameraPosition = (
   altitude: number,
   smooth = false
 ) => {
-  var bearingInRadian = bearing / 57.29;
-  var pitchInRadian = (90 - pitch) / 57.29;
+  var bearingInRadian = bearing * (Math.PI / 180);
+  var pitchInRadian = (90 - pitch) * (Math.PI / 180);
 
+  // 经度
   var lngDiff =
     ((altitude / Math.tan(pitchInRadian)) *
       Math.sin(-bearingInRadian)) /
-    70000; // ~70km/degree longitude
+    (111320 * Math.cos(targetPosition.lat * (Math.PI / 180)));
+
+  // 纬度
   var latDiff =
     ((altitude / Math.tan(pitchInRadian)) *
       Math.cos(-bearingInRadian)) /
-    110000 // 110km/degree latitude
+    111320;
 
   var correctedLng = targetPosition.lng + lngDiff;
   var correctedLat = targetPosition.lat - latDiff;
@@ -170,6 +173,50 @@ const flyInAndRotate = async ({
   });
 };
 
+const toRadians = (degrees: number) => {
+  return degrees * (Math.PI / 180);
+}
+
+const toDegrees = (radians: number) => {
+  return radians * (180 / Math.PI);
+}
+
+const calculateBearing = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+  // 将经纬度转换为弧度
+  const phi1 = toRadians(lat1);
+  const lambda1 = toRadians(lng1);
+  const phi2 = toRadians(lat2);
+  const lambda2 = toRadians(lng2);
+
+  // 计算经度差值
+  const deltaLambda = lambda2 - lambda1;
+
+  // 计算方位角
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  const theta = Math.atan2(y, x);
+
+  // 将弧度转换为角度，并归一化到 0-360 度
+  const bearing = (toDegrees(theta) + 360) % 360;
+  return bearing;
+}
+
+const getFirstBearing = ({
+  duration,
+  path,
+}: {
+  duration: number;
+  path: any;
+}) => {
+  const animationPhase = (1 / 60) / duration;
+  const pathDistance = turf.length(path);
+  const startPath = turf.along(path, 0).geometry
+    .coordinates;
+  const endPath = turf.along(path, pathDistance * animationPhase).geometry
+    .coordinates;
+  return calculateBearing(startPath[1], startPath[0], endPath[1], endPath[0]);
+}
+
 const animatePath = async ({
   map,
   duration,
@@ -188,6 +235,7 @@ const animatePath = async ({
   return new Promise<null>(async (resolve) => {
     const pathDistance = turf.length(path);
     let startTime: number;
+    let lastLngLat: { lng: number, lat: number };
 
     const frame = async (currentTime: number) => {
       if (!startTime) startTime = currentTime;
@@ -195,7 +243,6 @@ const animatePath = async ({
 
       // when the duration is complete, resolve the promise and stop iterating
       if (animationPhase > 1) {
-
         resolve(null);
         return;
       }
@@ -204,6 +251,7 @@ const animatePath = async ({
       const alongPath = turf.along(path, pathDistance * animationPhase).geometry
         .coordinates;
 
+      // 当前轨迹点位
       const lngLat = {
         lng: alongPath[0],
         lat: alongPath[1],
@@ -224,7 +272,15 @@ const animatePath = async ({
       );
 
       // slowly rotate the map at a constant rate
-      const bearing = startBearing - animationPhase * 200.0;
+      // 镜头旋转
+      // const bearing = startBearing - animationPhase * 600.0;
+      // const bearing = startBearing;
+      let bearing: number;
+      if (!lastLngLat) {
+        bearing = map.getBearing();
+      } else {
+        // bearing = calculateBearing(lastLngLat.lat, lastLngLat.lng, lngLat.lat, lngLat.lng);
+      }
 
       // compute corrected camera ground position, so that he leading edge of the path is in view
       var correctedPosition = computeCameraPosition(
@@ -248,6 +304,8 @@ const animatePath = async ({
       // apply the new camera options
       map.setFreeCameraOptions(camera);
 
+      // lastLngLat = lngLat;
+
       // repeat!
       await window.requestAnimationFrame(frame);
     };
@@ -256,4 +314,4 @@ const animatePath = async ({
   });
 };
 
-export { createGeoJSONCircle, flyInAndRotate, animatePath };
+export { createGeoJSONCircle, flyInAndRotate, animatePath, getFirstBearing, computeCameraPosition };
