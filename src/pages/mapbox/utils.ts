@@ -1,41 +1,14 @@
 import mapboxgl from "mapbox-gl";
 import * as d3 from 'd3';
 import * as turf from '@turf/turf';
-
-const createGeoJSONCircle = (center: Array<any>, radiusInKm: number, points = 64) => {
-  const coords = {
-    latitude: center[1],
-    longitude: center[0],
-  };
-  const km = radiusInKm;
-  const ret = [];
-  const distanceX = km / (111.320 * Math.cos((coords.latitude * Math.PI) / 180));
-  const distanceY = km / 110.574;
-  let theta;
-  let x;
-  let y;
-  for (let i = 0; i < points; i += 1) {
-    theta = (i / points) * (2 * Math.PI);
-    x = distanceX * Math.cos(theta);
-    y = distanceY * Math.sin(theta);
-    ret.push([coords.longitude + x, coords.latitude + y]);
-  }
-  ret.push(ret[0]);
-  return {
-    type: 'Feature',
-    geometry: {
-      type: 'Polygon',
-      coordinates: [ret],
-    }
-  } as any;
-}
+import { Feature, LineString } from "geojson";
 
 // given a bearing, pitch, altitude, and a targetPosition on the ground to look at,
 // calculate the camera's targetPosition as lngLat
-let previousCameraPosition: { lng: number, lat: number }
+let previousCameraPosition: { lng: any; lat: any; };
 
 // amazingly simple, via https://codepen.io/ma77os/pen/OJPVrP
-function lerp(start: number, end: number, amt: number) {
+const lerp = (start: number, end: number, amt: number) => {
   return (1 - amt) * start + amt * end
 }
 
@@ -170,38 +143,46 @@ const flyInAndRotate = async ({
   });
 };
 
+const getBearing = (p1: Array<number>, p2: Array<number>) => {
+  const rad = Math.PI / 180;
+  const y = Math.sin((p2[0] - p1[0]) * rad) * Math.cos(p2[1] * rad);
+  const x = Math.cos(p1[1] * rad) * Math.sin(p2[1] * rad) -
+    Math.sin(p1[1] * rad) * Math.cos(p2[1] * rad) * Math.cos((p2[0] - p1[0]) * rad);
+  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+}
+
 const animatePath = async ({
   map,
-  duration,
-  path,
-  startBearing,
-  startAltitude,
-  pitch
+  altitude,
+  pitch,
+  bearingList,
+  trackData,
+  speed
 }: {
   map: any;
-  duration: number;
-  path: any;
-  startBearing: number,
-  startAltitude: number,
+  altitude: number,
   pitch: number,
+  bearingList: Array<{ l: number, r: number, bearing: number }>,
+  trackData: Feature<LineString>,
+  speed: number,
 }) => {
+  const coordinates = trackData.geometry.coordinates;
   return new Promise<null>(async (resolve) => {
-    const pathDistance = turf.length(path);
-    let startTime: number;
+    // 帧数统计
+    let index: number = 0;
+    // 总长度
+    const distance = turf.length(trackData);
 
-    const frame = async (currentTime: number) => {
-      if (!startTime) startTime = currentTime;
-      const animationPhase = (currentTime - startTime) / duration;
+    const frame = async () => {
+      const animationPhase = speed * index / (distance * 1000);
 
       // when the duration is complete, resolve the promise and stop iterating
       if (animationPhase > 1) {
-
         resolve(null);
         return;
       }
 
-      // calculate the distance along the path based on the animationPhase
-      const alongPath = turf.along(path, pathDistance * animationPhase).geometry
+      const alongPath = turf.along(trackData, distance * animationPhase).geometry
         .coordinates;
 
       const lngLat = {
@@ -223,16 +204,14 @@ const animatePath = async ({
         ]
       );
 
-      // slowly rotate the map at a constant rate
-      // const bearing = startBearing - animationPhase * 200.0;
-      const bearing = startBearing;
+      const bearing = bearingList[0].bearing;
 
       // compute corrected camera ground position, so that he leading edge of the path is in view
-      var correctedPosition = computeCameraPosition(
+      const correctedPosition = computeCameraPosition(
         pitch,
         bearing,
         lngLat,
-        startAltitude,
+        altitude,
         true // smooth
       );
 
@@ -243,18 +222,20 @@ const animatePath = async ({
       // set the position and altitude of the camera
       camera.position = mapboxgl.MercatorCoordinate.fromLngLat(
         correctedPosition,
-        startAltitude
+        altitude,
       );
 
       // apply the new camera options
       map.setFreeCameraOptions(camera);
 
+      index++;
+
       // repeat!
       await window.requestAnimationFrame(frame);
     };
 
-    await window.requestAnimationFrame(frame);
+    frame();
   });
-};
+}
 
-export { createGeoJSONCircle, flyInAndRotate, animatePath };
+export { flyInAndRotate, getBearing, animatePath };

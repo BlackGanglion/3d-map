@@ -1,43 +1,109 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { Feature, LineString, Position } from 'geojson';
 import mapboxgl from 'mapbox-gl';
 import * as turf from '@turf/turf';
 
 import { token } from '../../../config';
-import { data } from '../../../data/450092046183596032';
-import { flyInAndRotate, animatePath } from './utils';
+import { data as trackData } from '../../../data/biaoyi';
 
 import 'mapbox-gl/dist/mapbox-gl.css';
 import styles from './mapbox.less';
+import { animatePath, flyInAndRotate, getBearing } from './utils';
 
 mapboxgl.accessToken = token;
 
-const initMap = async () => {
-  // get the start of the linestring, to be used for animating a zoom-in from high altitude
+// 固定俯角
+const PITCH = 60;
+// 固定高度
+const ALTITUDE = 3000;
+const EXAGGERATION = 2;
+// 倍速模式（1,2,5,10）
+const DoubleSpeed = 1;
+// 播放速度，每帧 X 米
+const Speed = 1 / 360 * DoubleSpeed * 1000;
+
+interface Data {
+  bearingList: Array<{ l: number, r: number, bearing: number }>
+  trackData: Feature<LineString>;
+}
+
+const initData = async (): Promise<Data> => {
+  // 简化转折点，并计算每个转折点之间的 bearing 变化
+  const simplifiedData = turf.simplify(trackData as Feature<LineString>, { tolerance: 0.004, highQuality: true });
+
+  let simplifiedIndex = 1;
+  let lastIndex = 0;
+  const bearingList: { l: number; r: number; bearing: number; }[] = [];
+  trackData.geometry.coordinates.forEach((coordinate, index) => {
+    const [lng, lat] = coordinate;
+    const [sLng, sLat] = simplifiedData.geometry.coordinates[simplifiedIndex];
+    if (lng === sLng && lat === sLat) {
+      const [lastLng, lastLat] = simplifiedData.geometry.coordinates[simplifiedIndex - 1];
+      bearingList.push({
+        l: lastIndex,
+        r: index,
+        bearing: getBearing(simplifiedData.geometry.coordinates[simplifiedIndex - 1], coordinate),
+      });
+      simplifiedIndex++;
+      lastIndex = index;
+    }
+  });
+
+  return {
+    bearingList,
+    trackData: trackData as Feature<LineString>,
+  };
+}
+
+const initMap = async (data: Data) => {
+  const { trackData, bearingList } = data;
+
   const targetLngLat = {
-    lng: data.geometry.coordinates[0][0],
-    lat: data.geometry.coordinates[0][1],
+    lng: trackData.geometry.coordinates[0][0],
+    lat: trackData.geometry.coordinates[0][1],
   };
 
   const map = new mapboxgl.Map({
     // style: 'mapbox://styles/blackganglion/cm4ps80vc006101su8ofl1z6q', // style URL
     style: 'mapbox://styles/mapbox/satellite-streets-v12',
     container: 'map',
-    zoom: 9.464540554397551,
+    zoom: 12,
     center: targetLngLat,
-    pitch: 70,
+    pitch: 0,
     bearing: 0,
     // Choose from Mapbox's core styles, or make your own style with Mapbox Studio
     // style: 'mapbox://styles/mapbox/standard'
   });
 
-  const addPathSourceAndLayer = (trackGeojson: any) => {
+  const addPointLayer = (data: Feature<LineString>) => {
+    map.addSource('points', {
+      type: "geojson",
+      data,
+    });
+
+    // 添加点图层
+    map.addLayer({
+      id: 'points-layer',
+      type: 'circle',
+      source: 'points',
+      paint: {
+        'circle-radius': 8,
+        'circle-color': '#ff0000',
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff'
+      }
+    });
+  }
+
+  const addPathSourceAndLayer = (data: Feature<LineString>) => {
     // Add a line feature and layer. This feature will get updated as we progress the animation
-    map.addSource("line", {
+    map.addSource('line', {
       type: "geojson",
       // Line metrics is required to use the 'line-progress' property
       lineMetrics: true,
-      data: trackGeojson,
+      data,
     });
+
     map.addLayer({
       id: "line-layer",
       type: "line",
@@ -51,113 +117,6 @@ const initMap = async () => {
         "line-cap": "round",
         "line-join": "round",
       },
-    });
-
-    /*
-    map.addSource("start-pin-base", {
-      type: "geojson",
-      data: createGeoJSONCircle(trackGeojson.geometry.coordinates[0], 0.04)
-    });
-
-    map.addSource("start-pin-top", {
-      type: "geojson",
-      data: createGeoJSONCircle(trackGeojson.geometry.coordinates[0], 0.25)
-    });
-
-    map.addSource("end-pin-base", {
-      type: "geojson",
-      data: createGeoJSONCircle(trackGeojson.geometry.coordinates.slice(-1)[0], 0.04)
-    });
-
-    map.addSource("end-pin-top", {
-      type: "geojson",
-      data: createGeoJSONCircle(trackGeojson.geometry.coordinates.slice(-1)[0], 0.25)
-    });
-
-    map.addLayer({
-      id: "start-fill-pin-base",
-      type: "fill-extrusion",
-      source: "start-pin-base",
-      paint: {
-        'fill-extrusion-color': '#0bfc03',
-        'fill-extrusion-height': 1000
-      }
-    });
-    map.addLayer({
-      id: "start-fill-pin-top",
-      type: "fill-extrusion",
-      source: "start-pin-top",
-      paint: {
-        'fill-extrusion-color': '#0bfc03',
-        'fill-extrusion-base': 1000,
-        'fill-extrusion-height': 1200
-      }
-    });
-
-    map.addLayer({
-      id: "end-fill-pin-base",
-      type: "fill-extrusion",
-      source: "end-pin-base",
-      paint: {
-        'fill-extrusion-color': '#eb1c1c',
-        'fill-extrusion-height': 1000
-      }
-    });
-    map.addLayer({
-      id: "end-fill-pin-top",
-      type: "fill-extrusion",
-      source: "end-pin-top",
-      paint: {
-        'fill-extrusion-color': '#eb1c1c',
-        'fill-extrusion-base': 1000,
-        'fill-extrusion-height': 1200
-      }
-    });
-    */
-  };
-
-  const playAnimations = async (trackGeojson: any) => {
-    return new Promise(async (resolve) => {
-      // add a geojson source and layer for the linestring to the map
-      addPathSourceAndLayer(trackGeojson);
-
-      const pitch = 70;
-
-      // animate zooming in to the start point, get the final bearing and altitude for use in the next animation
-      const { bearing, altitude } = await flyInAndRotate({
-        map,
-        targetLngLat,
-        duration: 10000,
-        startAltitude: 100000,
-        endAltitude: 1000,
-        startBearing: 0,
-        endBearing: -20,
-        startPitch: 40,
-        endPitch: pitch,
-      });
-
-      // follow the path while slowly rotating the camera, passing in the camera bearing and altitude from the previous animation
-      await animatePath({
-        map,
-        duration: 120000,
-        path: trackGeojson,
-        startBearing: bearing,
-        startAltitude: altitude,
-        pitch,
-      });
-
-      // get the bounds of the linestring, use fitBounds() to animate to a final view
-      const bounds = turf.bbox(trackGeojson) as any;
-      map.fitBounds(bounds, {
-        duration: 3000,
-        pitch: 30,
-        bearing: 0,
-        padding: 120,
-      });
-
-      setTimeout(() => {
-        resolve(null);
-      }, 10000)
     });
   }
 
@@ -187,8 +146,8 @@ const initMap = async () => {
       'maxzoom': 14
     });
     // add the DEM source as a terrain layer with exaggerated height
-    map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 2 });
-  };
+    map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': EXAGGERATION });
+  }
 
   map.on('style.load', async () => {
     // add 3d, sky and fog
@@ -197,25 +156,59 @@ const initMap = async () => {
     // wait until the map settles
     await map.once('idle');
 
-    // fetch the geojson for the linestring to be animated
-    // kick off the animations
-    await playAnimations(data);
+    // 初始化轨迹
+    addPathSourceAndLayer(trackData);
+
+    // 动画到初始位置
+    const spaceView = {
+      duration: 4000 / DoubleSpeed,
+      startAltitude: 3000000,
+      startPitch: 40,
+    };
+
+    await flyInAndRotate({
+      map,
+      targetLngLat,
+      duration: spaceView.duration,
+      startAltitude: spaceView.startAltitude,
+      endAltitude: ALTITUDE,
+      startBearing: 0,
+      endBearing: bearingList[0].bearing,
+      startPitch: spaceView.startPitch,
+      endPitch: PITCH,
+    });
+
+    await animatePath({
+      map,
+      trackData,
+      speed: Speed,
+      altitude: ALTITUDE,
+      pitch: PITCH,
+      bearingList,
+    });
   });
 
-  function printMapState() {
+  const printMapState = () => {
+    /*
     console.log("Zoom: " + map.getZoom());
     console.log("Center: " + JSON.stringify(map.getCenter()));
     console.log("Pitch: " + map.getPitch());
     console.log("Bearing: " + map.getBearing());
+    */
   }
 
   map.on('moveend', printMapState);
 }
 
+const init = async () => {
+  const data = await initData();
+  initMap(data);
+}
+
 const Mapbox = () => {
 
   useEffect(() => {
-    initMap();
+    init();
   }, []);
 
   return (

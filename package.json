@@ -11,13 +11,15 @@
   "dependencies": {
     "@turf/turf": "^7.2.0",
     "d3": "^7.9.0",
-    "mapbox-gl": "^3.10.0",
-    "umi": "^4.4.6"
+    "geojson": "^0.5.0",
+    "mapbox-gl": "^3.12.0",
+    "umi": "^4.4.11"
   },
   "devDependencies": {
     "@types/d3": "^7.4.3",
-    "@types/react": "^18.0.33",
-    "@types/react-dom": "^18.0.11",
-    "typescript": "^5.0.3"
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@types/geojson": "^7946.0.16",
+    "typescript": "^5.8.3"
   }
 }
