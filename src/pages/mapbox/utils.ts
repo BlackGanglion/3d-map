@@ -170,6 +170,7 @@ const animatePath = async ({
   return new Promise<null>(async (resolve) => {
     // 帧数统计
     let index: number = 0;
+    let nextBearingIndex = 1;
     // 总长度
     const distance = turf.length(trackData);
 
@@ -180,6 +181,22 @@ const animatePath = async ({
       if (animationPhase > 1) {
         resolve(null);
         return;
+      }
+
+      const { l, r, bearing: currentBearing } = bearingList[nextBearingIndex - 1];
+      const nextBearing = bearingList?.[nextBearingIndex]?.bearing;
+
+      // 进入下一个拐弯
+      let bearing = currentBearing;
+      const ratio = 0.1;
+      const lRange = (l + (r - l) * (1 - ratio)) / coordinates.length;
+      if (r / coordinates.length <= animationPhase) {
+        nextBearingIndex++;
+        bearing = nextBearing;
+      } else if (nextBearing && animationPhase < r / coordinates.length && lRange <= animationPhase) {
+        const normalizedTime = (animationPhase - lRange) / ((r - l) / coordinates.length * ratio);
+        bearing = currentBearing + (nextBearing - currentBearing) * normalizedTime;
+        console.log('======', bearing, currentBearing, nextBearing);
       }
 
       const alongPath = turf.along(trackData, distance * animationPhase).geometry
@@ -203,8 +220,6 @@ const animatePath = async ({
           "rgba(0, 0, 0, 0)",
         ]
       );
-
-      const bearing = bearingList[0].bearing;
 
       // compute corrected camera ground position, so that he leading edge of the path is in view
       const correctedPosition = computeCameraPosition(

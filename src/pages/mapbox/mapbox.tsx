@@ -18,12 +18,13 @@ const PITCH = 60;
 const ALTITUDE = 3000;
 const EXAGGERATION = 2;
 // 倍速模式（1,2,5,10）
-const DoubleSpeed = 1;
+const DoubleSpeed = 2;
 // 播放速度，每帧 X 米
 const Speed = 1 / 360 * DoubleSpeed * 1000;
 
 interface Data {
-  bearingList: Array<{ l: number, r: number, bearing: number }>
+  bearingList: Array<{ l: number, r: number, bearing: number }>;
+  simplifiedData: Feature<LineString>;
   trackData: Feature<LineString>;
 }
 
@@ -38,9 +39,9 @@ const initData = async (): Promise<Data> => {
     const [lng, lat] = coordinate;
     const [sLng, sLat] = simplifiedData.geometry.coordinates[simplifiedIndex];
     if (lng === sLng && lat === sLat) {
-      const [lastLng, lastLat] = simplifiedData.geometry.coordinates[simplifiedIndex - 1];
       bearingList.push({
         l: lastIndex,
+
         r: index,
         bearing: getBearing(simplifiedData.geometry.coordinates[simplifiedIndex - 1], coordinate),
       });
@@ -51,12 +52,13 @@ const initData = async (): Promise<Data> => {
 
   return {
     bearingList,
+    simplifiedData,
     trackData: trackData as Feature<LineString>,
   };
 }
 
 const initMap = async (data: Data) => {
-  const { trackData, bearingList } = data;
+  const { trackData, bearingList, simplifiedData } = data;
 
   const targetLngLat = {
     lng: trackData.geometry.coordinates[0][0],
@@ -158,6 +160,7 @@ const initMap = async (data: Data) => {
 
     // 初始化轨迹
     addPathSourceAndLayer(trackData);
+    addPointLayer(simplifiedData);
 
     // 动画到初始位置
     const spaceView = {
