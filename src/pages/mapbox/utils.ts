@@ -1,7 +1,8 @@
 import mapboxgl from "mapbox-gl";
 import * as d3 from 'd3';
 import * as turf from '@turf/turf';
-import { Feature, LineString } from "geojson";
+import { Feature, LineString, Position } from "geojson";
+import projectPointToGreatCircle from "./projectPointToGreatCircle";
 
 // given a bearing, pitch, altitude, and a targetPosition on the ground to look at,
 // calculate the camera's targetPosition as lngLat
@@ -19,20 +20,20 @@ const computeCameraPosition = (
   altitude: number,
   smooth = false
 ) => {
-  var bearingInRadian = bearing * (Math.PI / 180);
-  var pitchInRadian = (90 - pitch) * (Math.PI / 180);
+  const bearingInRadian = bearing * (Math.PI / 180);
+  const pitchInRadian = (90 - pitch) * (Math.PI / 180);
 
-  var lngDiff =
+  const lngDiff =
     ((altitude / Math.tan(pitchInRadian)) *
       Math.sin(-bearingInRadian)) /
     (111320 * Math.cos(targetPosition.lat * (Math.PI / 180)));
-  var latDiff =
+  const latDiff =
     ((altitude / Math.tan(pitchInRadian)) *
       Math.cos(-bearingInRadian)) /
     111320;
 
-  var correctedLng = targetPosition.lng + lngDiff;
-  var correctedLat = targetPosition.lat - latDiff;
+  const correctedLng = targetPosition.lng + lngDiff;
+  const correctedLat = targetPosition.lat - latDiff;
 
   const newCameraPosition = {
     lng: correctedLng,
@@ -151,6 +152,11 @@ const getBearing = (p1: Array<number>, p2: Array<number>) => {
   return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
 }
 
+const getLineRatio = (trackData: Feature<LineString>, point: Position) => {
+  const subLine = turf.lineSlice(trackData.geometry.coordinates[0], point, trackData);
+  return turf.length(subLine);
+}
+
 const animatePath = async ({
   map,
   altitude,
@@ -162,7 +168,7 @@ const animatePath = async ({
   map: any;
   altitude: number,
   pitch: number,
-  bearingList: Array<{ l: number, r: number, bearing: number }>,
+  bearingList: Array<{ l: number, lRatio: number, r: number, rRatio: number, bearing: number }>,
   trackData: Feature<LineString>,
   speed: number,
 }) => {
@@ -183,29 +189,40 @@ const animatePath = async ({
         return;
       }
 
-      const { l, r, bearing: currentBearing } = bearingList[nextBearingIndex - 1];
+      const alongPath = turf.along(trackData, distance * animationPhase).geometry.coordinates;
+
+      const { l, lRatio, r, rRatio, bearing: currentBearing } = bearingList[nextBearingIndex - 1];
       const nextBearing = bearingList?.[nextBearingIndex]?.bearing;
+
+      // 简化轨迹起始
+      const startPoint = coordinates[l];
+      const endPoint = coordinates[r];
+
+      const point = projectPointToGreatCircle(
+        startPoint[1], startPoint[0],
+        endPoint[1], endPoint[0],
+        alongPath[1], alongPath[0],
+      );
+
+      // 简化轨迹上的位置
+      const lngLat = {
+        lng: point[1],
+        lat: point[0],
+      };
 
       // 进入下一个拐弯
       let bearing = currentBearing;
-      const ratio = 0.1;
-      const lRange = (l + (r - l) * (1 - ratio)) / coordinates.length;
-      if (r / coordinates.length <= animationPhase) {
+      const ratio = 0.2;
+      const lRangeRatio = lRatio + (rRatio - lRatio) * (1 - ratio);
+
+      if (rRatio <= animationPhase) {
         nextBearingIndex++;
         bearing = nextBearing;
-      } else if (nextBearing && animationPhase < r / coordinates.length && lRange <= animationPhase) {
-        const normalizedTime = (animationPhase - lRange) / ((r - l) / coordinates.length * ratio);
-        bearing = currentBearing + (nextBearing - currentBearing) * normalizedTime;
-        console.log('======', bearing, currentBearing, nextBearing);
+      } else if (nextBearing && animationPhase < rRatio && lRangeRatio <= animationPhase) {
+        const normalizedTime = (animationPhase - lRangeRatio) / (rRatio - lRangeRatio);
+        const rotation = normalizeBearing(currentBearing, nextBearing);
+        bearing = currentBearing + rotation * normalizedTime;
       }
-
-      const alongPath = turf.along(trackData, distance * animationPhase).geometry
-        .coordinates;
-
-      const lngLat = {
-        lng: alongPath[0],
-        lat: alongPath[1],
-      };
 
       // Reduce the visible length of the line by using a line-gradient to cutoff the line
       // animationPhase is a value between 0 and 1 that reprents the progress of the animation
@@ -227,7 +244,6 @@ const animatePath = async ({
         bearing,
         lngLat,
         altitude,
-        true // smooth
       );
 
       // set the pitch and bearing of the camera
@@ -253,4 +269,17 @@ const animatePath = async ({
   });
 }
 
-export { flyInAndRotate, getBearing, animatePath };
+const normalizeBearing = (currentBearing: number, targetBearing: number) => {
+  // 将角度归一化到0-360范围
+  currentBearing = ((currentBearing % 360) + 360) % 360;
+  targetBearing = ((targetBearing % 360) + 360) % 360;
+
+  // 计算两个可能的方向差值
+  const diff1 = (targetBearing - currentBearing + 360) % 360;
+  const diff2 = diff1 - 360;
+
+  // 返回绝对值较小的差值
+  return Math.abs(diff1) <= Math.abs(diff2) ? diff1 : diff2;
+}
+
+export { flyInAndRotate, getBearing, animatePath, getLineRatio };

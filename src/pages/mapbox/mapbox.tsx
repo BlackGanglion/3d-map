@@ -4,11 +4,11 @@ import mapboxgl from 'mapbox-gl';
 import * as turf from '@turf/turf';
 
 import { token } from '../../../config';
-import { data as trackData } from '../../../data/biaoyi';
+import { data as trackData } from '../../../data/gangbai';
 
 import 'mapbox-gl/dist/mapbox-gl.css';
 import styles from './mapbox.less';
-import { animatePath, flyInAndRotate, getBearing } from './utils';
+import { animatePath, flyInAndRotate, getBearing, getLineRatio } from './utils';
 
 mapboxgl.accessToken = token;
 
@@ -18,12 +18,12 @@ const PITCH = 60;
 const ALTITUDE = 3000;
 const EXAGGERATION = 2;
 // 倍速模式（1,2,5,10）
-const DoubleSpeed = 2;
+const DoubleSpeed = 10;
 // 播放速度，每帧 X 米
 const Speed = 1 / 360 * DoubleSpeed * 1000;
 
 interface Data {
-  bearingList: Array<{ l: number, r: number, bearing: number }>;
+  bearingList: Array<{ l: number, lRatio: number, r: number, rRatio: number, bearing: number }>;
   simplifiedData: Feature<LineString>;
   trackData: Feature<LineString>;
 }
@@ -31,18 +31,21 @@ interface Data {
 const initData = async (): Promise<Data> => {
   // 简化转折点，并计算每个转折点之间的 bearing 变化
   const simplifiedData = turf.simplify(trackData as Feature<LineString>, { tolerance: 0.004, highQuality: true });
+  const distance = turf.length(trackData as Feature<LineString>);
 
   let simplifiedIndex = 1;
   let lastIndex = 0;
-  const bearingList: { l: number; r: number; bearing: number; }[] = [];
-  trackData.geometry.coordinates.forEach((coordinate, index) => {
+  const bearingList: { l: number, lRatio: number, r: number, rRatio: number, bearing: number }[] = [];
+  const coordinates = trackData.geometry.coordinates;
+  coordinates.forEach((coordinate, index) => {
     const [lng, lat] = coordinate;
     const [sLng, sLat] = simplifiedData.geometry.coordinates[simplifiedIndex];
     if (lng === sLng && lat === sLat) {
       bearingList.push({
         l: lastIndex,
-
+        lRatio: getLineRatio(trackData as Feature<LineString>, coordinates[lastIndex]) / distance,
         r: index,
+        rRatio: getLineRatio(trackData as Feature<LineString>, coordinates[index]) / distance,
         bearing: getBearing(simplifiedData.geometry.coordinates[simplifiedIndex - 1], coordinate),
       });
       simplifiedIndex++;
@@ -160,7 +163,7 @@ const initMap = async (data: Data) => {
 
     // 初始化轨迹
     addPathSourceAndLayer(trackData);
-    addPointLayer(simplifiedData);
+    // addPointLayer(simplifiedData);
 
     // 动画到初始位置
     const spaceView = {
