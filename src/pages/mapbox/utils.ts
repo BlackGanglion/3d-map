@@ -165,7 +165,7 @@ const animatePath = async ({
   trackData,
   speed
 }: {
-  map: any;
+  map: mapboxgl.Map;
   altitude: number,
   pitch: number,
   bearingList: Array<{ l: number, lRatio: number, r: number, rRatio: number, bearing: number }>,

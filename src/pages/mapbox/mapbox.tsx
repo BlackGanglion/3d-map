@@ -4,11 +4,12 @@ import mapboxgl from 'mapbox-gl';
 import * as turf from '@turf/turf';
 
 import { token } from '../../../config';
-import { data as trackData } from '../../../data/gangbai';
+import { data as trackData } from '../../../data/biaoyi';
 
 import 'mapbox-gl/dist/mapbox-gl.css';
 import styles from './mapbox.less';
 import { animatePath, flyInAndRotate, getBearing, getLineRatio } from './utils';
+import { getCameraHeight } from './converter';
 
 mapboxgl.accessToken = token;
 
@@ -16,9 +17,9 @@ mapboxgl.accessToken = token;
 const PITCH = 60;
 // 固定高度
 const ALTITUDE = 3000;
-const EXAGGERATION = 2;
+const EXAGGERATION = 1;
 // 倍速模式（1,2,5,10）
-const DoubleSpeed = 10;
+const DoubleSpeed = 1;
 // 播放速度，每帧 X 米
 const Speed = 1 / 360 * DoubleSpeed * 1000;
 
@@ -195,12 +196,14 @@ const initMap = async (data: Data) => {
   });
 
   const printMapState = () => {
-    /*
-    console.log("Zoom: " + map.getZoom());
+    const zoom = map.getZoom();
+    const pitch = map.getPitch();
+    const height = getCameraHeight(map);
+    console.log("Zoom: " + zoom);
+    console.log("Height: " + height);
     console.log("Center: " + JSON.stringify(map.getCenter()));
-    console.log("Pitch: " + map.getPitch());
+    console.log("Pitch: " + pitch);
     console.log("Bearing: " + map.getBearing());
-    */
   }
 
   map.on('moveend', printMapState);
